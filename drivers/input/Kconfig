@@ -1,0 +1,20 @@
+config INPUT_TPS43
+    bool "Azoteq TPS43 I2C Touchpad Input Device"
+    default y
+    depends on DT_HAS_AZOTEQ_TPS43_ENABLED
+    depends on INPUT
+    select I2C
+    help
+      Включить драйвер для устройства ввода тачпада Azoteq по интерфейсу I2C.
+      Поддерживает мультитач-жесты, прокрутку, клики и управление питанием.
+      Only built on the half whose devicetree has an okay `azoteq,tps43` node.
+
+if INPUT_TPS43
+
+config INPUT_TPS43_INIT_PRIORITY
+    int "Init priority"
+    default 90
+    help
+      Приоритет инициализации драйвера устройства.
+
+endif # INPUT_TPS43

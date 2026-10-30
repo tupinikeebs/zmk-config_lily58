@@ -1,0 +1,403 @@
+properties:
+  rdy-gpios:
+    type: phandle-array
+    required: false
+    description: GPIO пин для сигнала прерывания RDY (Ready)
+
+  rst-gpios:
+    type: phandle-array
+    required: false
+    description: GPIO пин для сигнала сброса RST (Reset)
+
+  filter-settings:
+    type: int
+    default: 0x0F
+    description: |
+      Определения битов:
+      - Бит 0 (0x01): IIR-фильтр - фильтр с бесконечной импульсной характеристикой для
+        сглаживание координат. Уменьшает высокочастотный шум и дрожание.
+      - Бит 1 (0x02): MAV-фильтр - фильтр скользящего среднего для определения координат
+        стабилизация. Удаляет выбросы и усредняет последние измерения.
+      - Бит 2 (0x04): Выбор IIR - При установке используется фиксированный коэффициент IIR.
+        Если флажок снят (по умолчанию), используется динамический IIR, который адаптируется к скорости движения.
+      - Бит 3 (0x08): Фильтр подсчета ALP - Адаптивный фильтр процесса обучения
+        для подавления шума. Отфильтровывает нежелательные события касания на основе изученных шаблонов.
+      
+      Общие конфигурации:
+      - 0x0B: включены IIR + MAV + ALP, динамический IIR.
+        Хороший баланс стабильности и отзывчивости.
+      - 0x0F (по умолчанию): Включены все фильтры, включая фиксированный выбор IIR.
+        Максимальное сглаживание, может привести к увеличению задержки.
+      - 0x03: только IIR + MAV. Базовое сглаживание без фильтрации ALP.
+      - 0x01: только IIR. Минимальная фильтрация, наименьшая задержка.
+      - 0x00: Все фильтры отключены. Исходные данные датчика могут содержать помехи.
+      
+      Значения могут быть объединены с помощью побитового ИЛИ (например, 0x01 | 0x02 = 0x03).
+
+  dynamic-bottom-beta:
+    type: int
+    required: false
+    default: -1
+    description: |
+      XY dynamic filter bottom beta (reg 0x0637, datasheet 5.9.2.1). Damping =
+      beta/256, so a SMALLER value filters HARDER. This is the beta used while
+      the finger moves at or below dynamic-lower-speed, i.e. it controls how much
+      jitter is smoothed out during slow/precision movement. -1 = chip default.
+      Only has an effect while the dynamic filter is selected (IIR_SELECT clear,
+      e.g. filter-settings = 0x01).
+
+  dynamic-lower-speed:
+    type: int
+    required: false
+    default: -1
+    description: |
+      Speed (px per report cycle) at or below which dynamic-bottom-beta applies
+      (reg 0x0638). Lower = the filter starts backing off sooner as the finger
+      picks up speed, so movement feels more immediate. -1 = chip default.
+
+  dynamic-upper-speed:
+    type: int
+    required: false
+    default: -1
+    description: |
+      Speed (px per report cycle) at or above which filtering is at its minimum
+      (reg 0x0639, 2 bytes). Lower = the pad reaches fully unfiltered tracking at
+      a slower finger speed. -1 = chip default.
+
+  report-rate-active-ms:
+    type: int
+    required: false
+    default: 0
+    description: |
+      Active-mode report rate in ms per cycle (reg 0x057A, datasheet 4.1). Lower
+      = more reports per second = lower latency, at a higher current draw.
+      Azoteq's reference designs use 10-13 ms; this family's NVM default is 13.
+      Going too low makes the chip miss the rate (RR_MISSED status flag),
+      especially with a high ati-target. 0 = chip default.
+
+  timeout-idle-s:
+    type: int
+    required: false
+    default: 0
+    description: |
+      Idle-mode timeout in seconds (reg 0x0586, datasheet 4.2). How long the chip
+      stays in Idle mode (~340 uA) after a finger lifts before stepping down to
+      LP1 (~47 uA). This family's NVM default is 10 s, which is longer than the
+      gap between strokes in normal use, so on a battery-powered half the chip
+      effectively never steps down while the pad is being used. Purely a power
+      knob: it does not change Active-mode behaviour, only how deep the chip
+      sleeps between touches. 255 = never step down. 0 = chip default.
+
+  touch-hysteresis:
+    type: int
+    required: false
+    default: -1
+    description: |
+      Gap between the touch SET and CLEAR multipliers (regs 0x0596 / 0x0597).
+      Threshold = Reference x (1 + Multiplier/128), so a smaller multiplier is a
+      more sensitive threshold. When set, the driver READS the current SET value
+      off the chip and writes CLEAR = SET - this, so hysteresis can be added
+      without knowing the pad's NVM defaults.
+
+      Why it matters: the chip computes the finger's XY as the centroid of the
+      channels currently over threshold. Under a glass/film overlay the rim
+      channels of the contact patch sit right at the threshold and flicker in and
+      out between reports, moving the centroid and showing up as jumpy fine
+      movement (worst on diagonals and direction changes). Hysteresis latches
+      those channels on once seen. Azoteq's documented cure for touch-output
+      jitter (AZD087 5.6.1); their own reference designs ship with a gap of 6.
+      Cannot reduce touch sensitivity -- SET is untouched, only release moves.
+      -1 = leave the chip defaults alone.
+
+  touch-set-multiplier:
+    type: int
+    required: false
+    default: -1
+    description: |
+      Global touch multiplier - SET (reg 0x0596). Threshold = Reference x
+      (1 + Multiplier/128); LOWER = detects a weaker touch. This, not ati-target,
+      is the real overlay-compensation knob: the threshold is relative to the
+      reference, so raising the ATI target scales both and does not by itself
+      make touch detection more sensitive. Azoteq reference values: 28 on the
+      IQS572EV02 (bare), 16 on the IQS550EV02 (Mylar overlay) - i.e. an overlay
+      wants a LOWER multiplier. Too low causes phantom/hover touches.
+      -1 = leave the chip default.
+
+  touch-clear-multiplier:
+    type: int
+    required: false
+    default: -1
+    description: |
+      Global touch multiplier - CLEAR (reg 0x0597); the threshold at which a
+      channel stops counting as touched. Should be lower than
+      touch-set-multiplier. Prefer touch-hysteresis unless you know this pad's
+      absolute values. Takes precedence over touch-hysteresis when both are set.
+      -1 = leave the chip default.
+
+  sensitivity:
+    type: int
+    required: false
+    default: 100
+    description: Процент чувствительности касания (100 = нормальная, больше = более чувствительная)
+
+  accel-max:
+    type: int
+    required: false
+    default: 0
+    description: |
+      Cursor acceleration: gain in percent reached at accel-upper-speed. The
+      gain ramps linearly from `sensitivity` (at accel-lower-speed and below)
+      to this. 0, or anything <= sensitivity, = off (flat sensitivity).
+      Cursor only; scroll speed is unaffected.
+
+  accel-lower-speed:
+    type: int
+    required: false
+    default: 4
+    description: Raw counts per report at or below which the gain is plain `sensitivity`.
+
+  accel-upper-speed:
+    type: int
+    required: false
+    default: 30
+    description: Raw counts per report at or above which the gain is accel-max.
+
+  scroll-sensitivity:
+    type: int
+    required: false
+    default: 50
+    description: Процент чувствительности прокрутки (50 = нормальная, больше = более чувствительная)
+
+  scroll-initial-distance:
+    type: int
+    required: false
+    default: 0
+    description: |
+      Distance in px the two fingers must travel before the SCROLL gesture
+      engages (reg 0x06C8). Lower = scroll starts on slighter movement. 0 leaves
+      the chip default.
+
+  scroll-steps-per-line:
+    type: int
+    required: false
+    default: 1
+    description: |
+      Wheel ticks emitted per scrolled LINE. 1 = whole lines, the classic HID
+      line wheel (unchanged behaviour). Anything above 1 emits sub-line ticks and
+      REQUIRES CONFIG_ZMK_POINTING_SMOOTH_SCROLLING on the central, which adds
+      the HID Resolution Multiplier the host uses to ask for fractional lines;
+      without it the host reads every tick as a full line and the page flies.
+      16 = the descriptor's physical maximum, i.e. the finest the host can ask
+      for. See the Sofle config's keyboard_learnings.md P3.1.
+
+  scroll-momentum:
+    type: boolean
+    required: false
+    description: |
+      Keep scrolling after a two-finger flick, decaying to a stop, instead of
+      stopping dead on the lift (what a MacBook does; libinput only does it for
+      real touchpads, and this pad reports as a mouse). A new touch stops the
+      coast. Pointless below ~8 scroll-steps-per-line, where every coast step is
+      a visible jump instead of a glide.
+
+  scroll-momentum-decay:
+    type: int
+    required: false
+    default: 88
+    description: |
+      Percent of the scroll velocity kept per momentum step. Lower = the coast
+      dies sooner; 88 at a 15 ms interval glides for roughly half a second.
+
+  scroll-momentum-interval-ms:
+    type: int
+    required: false
+    default: 15
+    description: Milliseconds between momentum steps (the coast's frame rate).
+
+  scroll-momentum-min-ticks:
+    type: int
+    required: false
+    default: 3
+    description: |
+      Minimum ticks on the final scroll report for a flick to coast at all, so a
+      slow deliberate scroll stops exactly where the finger left it.
+
+  scroll-momentum-max-ms:
+    type: int
+    required: false
+    default: 1200
+    description: Hard cap on a single coast, so a bad velocity estimate can't scroll forever.
+
+  zoom:
+    type: boolean
+    required: false
+    description: |
+      Enable pinch-to-zoom (chip gesture reg 0x06B8 bit 2). Reported as
+      INPUT_BTN_5 (zoom in) / INPUT_BTN_6 (zoom out), which a
+      zmk,input-processor-behaviors node on the central maps to Ctrl+= / Ctrl+-.
+      Does not cost two-finger scroll: the chip only calls it a zoom once the
+      finger SEPARATION changes, and a parallel two-finger drag keeps the
+      separation constant.
+
+  zoom-step-px:
+    type: int
+    required: false
+    default: 40
+    description: |
+      Finger-separation change (px) per emitted zoom step - the detent size. The
+      chip reports zoom continuously, so without this one pinch would fire dozens
+      of Ctrl+= presses.
+
+  invert-zoom:
+    type: boolean
+    required: false
+    description: |
+      Swap zoom in and out, for when the separation delta's sign runs the other
+      way round on this module.
+
+  ati-target:
+    type: int
+    required: false
+    default: 0
+    description: |
+      ATI target (reg 0x056D): the touch-detection gain the chip auto-tunes to.
+      Higher = more sensitive, to compensate for a glass/overlay over the pad
+      (~500 is Azoteq's reference; try 700-900 under glass). Writing it re-runs
+      AUTO_ATI. 0 leaves the chip default. Too high can cause ATI errors.
+      NOTE: raising this also SLOWS the response rate. Under a thick overlay
+      prefer ati-c below, which buys sensitivity without that cost.
+
+  ati-c:
+    type: int
+    required: false
+    default: -1
+    description: |
+      Global ATI C multiplier (reg 0x056B). The second ATI gain parameter, and
+      the one Azoteq reach for first when an overlay leaves a pad
+      under-sensitive: LOWER = more sensitive, and unlike ati-target it does not
+      lengthen the charge time, so it costs no report rate (AZD087 5.5, 6.7.1).
+      Azoteq reference values: 2 on the bare IQS572EV02, 1 on the Mylar-overlay
+      IQS550EV02 - i.e. an overlay wants a LOWER value.
+      Pick it from measurement, not taste: lowering it forces the ATI
+      compensation up, which should land around 100-150 (datasheet 3.7.4), and
+      pinning at 255 raises ATI_ERROR. Use debug-report-registers to read the
+      factory value and the resulting compensation before changing it.
+      Writing it re-runs AUTO_ATI. -1 leaves the chip default.
+
+  debug-report-registers:
+    type: boolean
+    description: |
+      Diagnostic, temporary. After configuring, read this pad's touch SET/CLEAR
+      multipliers, Global ATI C and ATI compensation spread back off the chip
+      and log them (needs USB logging on the trackpad half).
+      The factory NVM values are published nowhere (the module datasheet has no
+      register values at all) and Azoteq's tuning procedure is
+      measure-then-choose, so this is how the numbers are obtained.
+
+  enable-power-management:
+    type: boolean
+    required: false
+    description: Включить автоматическое управление питанием (приостановка/возобновление)
+
+  single-tap:
+    type: boolean
+    required: false
+    description: Включить жест одиночного касания
+
+  two-finger-tap:
+    type: boolean
+    required: false
+    description: Включить жест касания двумя пальцами
+
+  scroll:
+    type: boolean
+    required: false
+    description: Включить жест прокрутки
+
+  swipes:
+    type: boolean
+    required: false
+    description: Включить обработку свайпов. При включении отслеживаются свайпы тремя пальцами
+
+  three-finger-drag:
+    type: boolean
+    required: false
+    description: |
+      While three or more fingers touch, hold the MIDDLE mouse button and let the
+      cursor move (a quick 3-finger tap = middle click; a 3-finger hold + move =
+      middle-drag, e.g. rotate/pan a 3D view in a slicer). Automatically raises
+      max-multitouches to >=3 so the chip reports data for 3 fingers. Do not
+      enable together with `swipes` (both act on 3-finger input).
+
+  max-multitouches:
+    type: int
+    required: false
+    default: 0
+    description: |
+      Max simultaneous touches written to reg 0x066A (0 = leave chip default,
+      which is low ~2). Above this count the chip raises TOO_MANY_FINGERS and
+      clears XY, so raise it (>=3) to use 3-finger gestures.
+
+  finger-split-factor:
+    type: int
+    required: false
+    default: -1
+    description: |
+      Finger-split aggression (reg 0x066B, datasheet 5.7): how aggressively the
+      chip splits a merged touch polygon into multiple fingers. 0 = never split
+      (one finger stays ONE contact -> keeps single-finger gestures working even
+      with max-multitouches>=3). Higher separates close fingers better but can
+      split a single finger into two. -1 = leave chip default.
+
+  switch-xy:
+    type: boolean
+    required: false
+    description: Поменять местами оси X и Y
+
+  press-and-hold:
+    type: boolean
+    required: false
+    description: Включить жест нажатия и удержания
+
+  hold-time-ms:
+    type: int
+    required: false
+    default: 300
+    description: |
+      Press-and-hold trigger delay in ms (written to reg 0x06BD). The drag
+      gesture fires after TapTime + hold-time-ms, so lower = drag engages
+      sooner. Only applied when press-and-hold is enabled.
+
+  tap-drag:
+    type: boolean
+    required: false
+    description: |
+      Tap-then-hold drag ("double-tap-drag"): after a single tap, a fresh touch
+      landing within tap-drag-window-ms grabs (holds the left button) and drags
+      until all fingers lift. Alternative to press-and-hold that triggers
+      instantly instead of waiting out the chip's hold timer.
+
+  tap-drag-window-ms:
+    type: int
+    required: false
+    default: 300
+    description: |
+      Max time (ms) between the single tap and the follow-up touch for tap-drag
+      to engage. Larger = more forgiving but more likely to turn a quick
+      double-tap into a drag.
+
+  invert-x:
+    type: boolean
+    description: Если присутствует, инвертировать значения координаты X.
+      
+  invert-y:
+    type: boolean
+    description: Если присутствует, инвертировать значения координаты Y.
+      
+  invert-scroll-x:
+    type: boolean
+    description: Если присутствует, инвертировать значения скролла по X.
+            
+  invert-scroll-y:
+    type: boolean
+    description: Если присутствует, инвертировать значения скролла по Y.

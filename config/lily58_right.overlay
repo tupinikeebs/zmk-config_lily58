@@ -1,0 +1,98 @@
+/*
+ * Right (peripheral) half: Azoteq TPS43 trackpad (vendored driver, drivers/input/).
+ *
+ * Wiring: VCC/GND -> 3.3 V/GND, SDA/SCL -> the pro_micro I2C pins (D2/D3), and
+ *   RDY -> pro_micro 21 (data-ready interrupt)
+ *   RST -> pro_micro 20 ("RST" == "NRST"; the driver drives the reset sequence)
+ * 20/21 are the Lily58 encoder pads. lily58.dtsi also maps its encoder node to
+ * them, so CONFIG_EC11 must stay off for this half.
+ *
+ * Pointer feel is the Sofle trackpad's tuned set; see that config for the
+ * measurements behind each value.
+ */
+
+#include <dt-bindings/gpio/gpio.h>
+
+&pro_micro_i2c {
+    status = "okay";
+
+    trackpad: trackpad@74 {
+        compatible = "azoteq,tps43";
+        reg = <0x74>;
+        status = "okay";
+
+        rdy-gpios = <&pro_micro 21 GPIO_ACTIVE_HIGH>;
+        rst-gpios = <&pro_micro 20 GPIO_ACTIVE_HIGH>;
+
+        /* Cursor speed %: flat 150 for slow/precise movement, ramping to 260 by
+         * 30 counts/report for fast swipes. accel-max = <0> turns the ramp off. */
+        sensitivity = <150>;
+        accel-max = <260>;
+        accel-lower-speed = <4>;
+        accel-upper-speed = <30>;
+
+        /* Touch SET/CLEAR gap (Azoteq's reference-design value). 10 made a
+         * resting finger wander on the Sofle; do not raise without re-testing. */
+        touch-hysteresis = <6>;
+
+        /* 0x03 = dynamic IIR + MAV. Drop to 0x01 if it feels laggy. */
+        filter-settings = <0x03>;
+        dynamic-bottom-beta = <80>;
+        dynamic-lower-speed = <6>;
+        dynamic-upper-speed = <24>;
+
+        /* Active-mode cycle (reg 0x057A): 10 ms = 100 Hz. Chip default is 13 ms
+         * (~77 Hz, ~30% less per-report drain). Go back to 13 if tracking turns
+         * erratic (the chip is missing the rate). */
+        report-rate-active-ms = <10>;
+
+        scroll-sensitivity = <15>;
+        /* px before scroll engages; also shared with two-finger-tap. */
+        scroll-initial-distance = <4>;
+
+        single-tap;       /* 1-finger tap -> left click  */
+        two-finger-tap;   /* 2-finger tap -> right click */
+
+        /* Two drag gestures: hold one finger still (press-and-hold, 120 ms), or
+         * tap then land again within 200 ms and drag (tap-drag). */
+        press-and-hold;
+        hold-time-ms = <120>;
+        tap-drag;
+        tap-drag-window-ms = <200>;
+
+        scroll;           /* 2-finger scroll (chip-native) */
+        /* 1/16-line wheel ticks. Needs CONFIG_ZMK_POINTING_SMOOTH_SCROLLING on
+         * the LEFT half. A host that ignores the HID Resolution Multiplier
+         * scrolls ~16x too fast: set this to <1> for such a host. */
+        scroll-steps-per-line = <16>;
+        scroll-momentum;  /* a fast flick keeps gliding; touching stops it */
+
+        /* Pinch-to-zoom -> Ctrl+= / Ctrl+- (tp_zoom in lily58_left.overlay). */
+        zoom;
+
+        /* 3-finger hold -> middle button (middle-drag); quick 3-finger tap ->
+         * middle click. finger-split-factor = 0 keeps 1-finger gestures intact
+         * with max-multitouches = 3. */
+        three-finger-drag;
+        max-multitouches = <3>;
+        finger-split-factor = <0>;
+
+        /* Orientation depends on how the pad is mounted. If the cursor moves the
+         * wrong way, toggle invert-x / invert-y / switch-xy. */
+        invert-x;
+    };
+};
+
+/ {
+    /* Forward this peripheral's pointing events to the central over the split. */
+    split_inputs {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        trackpad_split: trackpad_split@0 {
+            compatible = "zmk,input-split";
+            reg = <0>;
+            device = <&trackpad>;
+        };
+    };
+};
