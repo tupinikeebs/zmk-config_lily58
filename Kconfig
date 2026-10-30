@@ -1,0 +1,3 @@
+# Kconfig for this config repo (also a Zephyr module).
+# Sources the vendored Azoteq TPS43 trackpad driver's Kconfig.
+rsource "drivers/input/Kconfig"

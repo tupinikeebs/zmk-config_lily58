@@ -1,0 +1,6 @@
+description: |
+  Драйвер сенсора тачпада Azoteq TPS43 по интерфейсу I2C
+
+compatible: "azoteq,tps43"
+
+include: ["i2c-device.yaml", "azoteq,tps43-common.yaml"]
