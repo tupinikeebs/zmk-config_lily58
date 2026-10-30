@@ -7,7 +7,12 @@ manifest:
   projects:
     - name: zmk
       remote: zmkfirmware
-      revision: main
+      # Pinned to v0.3 for reliable deep sleep: ZMK `main` (Zephyr 4.1) has open
+      # deep-sleep wake/drain regressions (zmk#3195/#3207). Moving back to main
+      # needs THREE coordinated edits: this revision, the workflow ref in
+      # .github/workflows/build.yml, and the board name in build.yaml
+      # (`nice_nano_v2` here vs `nice_nano@2.0.0//zmk` on main).
+      revision: v0.3
       import: app/west.yml
   self:
     path: config

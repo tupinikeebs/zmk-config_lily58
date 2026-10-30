@@ -19,9 +19,11 @@
 #
 ---
 include:
-  - board: nice_nano@2.0.0//zmk
+  # ZMK is pinned to v0.3 (config/west.yml), which uses the pre-Zephyr-4.1 board
+  # name `nice_nano_v2`, not the `nice_nano@2.0.0//zmk` syntax used on `main`.
+  - board: nice_nano_v2
     shield: lily58_left
     snippet: studio-rpc-usb-uart
     cmake-args: -DCONFIG_ZMK_STUDIO=y
-  - board: nice_nano@2.0.0//zmk
+  - board: nice_nano_v2
     shield: lily58_right
