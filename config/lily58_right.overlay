@@ -32,6 +32,11 @@
         rdy-gpios = <&pro_micro 21 GPIO_ACTIVE_HIGH>;
         rst-gpios = <&pro_micro 20 GPIO_ACTIVE_HIGH>;
 
+        /* Suspend the pad on ZMK deep SLEEP only (drivers/input/
+         * tps43_idle_sleeper.c). It keeps scanning through IDLE, so a touch
+         * wakes the board without pressing a key. */
+        enable-power-management;
+
         /* Cursor speed %: flat 150 for slow/precise movement, ramping to 260 by
          * 30 counts/report for fast swipes. accel-max = <0> turns the ramp off. */
         sensitivity = <150>;
