@@ -54,6 +54,13 @@
          * erratic (the chip is missing the rate). */
         report-rate-active-ms = <10>;
 
+        /* Battery knob, no effect on feel while a finger is down. After a lift
+         * the chip holds Idle mode (~340 uA) this long before stepping down to
+         * LP1 (~47 uA). The NVM default of 10 s is longer than the gaps between
+         * strokes, so it never stepped down mid-session. Must stay longer than
+         * every gesture timer (tap-drag window 200 ms, hold-time 120 ms). */
+        timeout-idle-s = <2>;
+
         scroll-sensitivity = <15>;
         /* px before scroll engages; also shared with two-finger-tap. */
         scroll-initial-distance = <4>;
