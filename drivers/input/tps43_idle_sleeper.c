@@ -36,7 +36,7 @@ static const struct device *tps43_devs[] = {DT_FOREACH_STATUS_OKAY(azoteq_tps43,
 * 
 * Эта функция вызывается при изменении состояния активности клавиатуры:
 * - ZMK_ACTIVITY_ACTIVE - клавиатура активна, тачпад должен быть пробужден
-* - ZMK_ACTIVITY_IDLE - клавиатура в режиме ожидания, тачпад переводится в sleep
+* - ZMK_ACTIVITY_IDLE - клавиатура в режиме ожидания, тачпад остаётся активным (touch-to-wake)
 * - ZMK_ACTIVITY_SLEEP - клавиатура в режиме сна, тачпад переводится в sleep
 * 
 * @param eh Указатель на событие изменения состояния активности
@@ -53,7 +53,17 @@ static int on_activity_state(const zmk_event_t *eh) {
      * scanning during IDLE so a touch can wake the keyboard. Resume on ACTIVE.
      * Deep sleep still fully suspends the pad (keypress-only wake there). */
     bool should_sleep = (state_ev->state == ZMK_ACTIVITY_SLEEP);
-    
+
+    /* ACTIVE <-> IDLE both map to "awake". Calling the driver anyway would do a
+     * read-modify-write of SYSTEM_CONTROL_1 outside the pad's RDY window, which
+     * the IQS5xx clock-stretches until its next cycle (up to a low-power cycle
+     * long), stalling the work queue that also delivers the wake keypress. */
+    static bool pads_asleep = false;
+    if (should_sleep == pads_asleep) {
+        return 0;
+    }
+    pads_asleep = should_sleep;
+
     LOG_INF("Изменение состояния активности ZMK: %d -> тачпад %s", 
             state_ev->state, should_sleep ? "sleep" : "active");
     
