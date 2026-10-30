@@ -12,9 +12,17 @@
  */
 
 #include <dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
 
 &pro_micro_i2c {
     status = "okay";
+
+    /* 400 kHz instead of the SoC's 100 kHz default (nothing in nice_nano or
+     * lily58 sets a rate). Every report is a 9-byte burst read plus the
+     * end-of-window write, ~100 times a second; at 100 kHz each one keeps the
+     * MCU awake for over a millisecond. The IQS5xx (the only device on this
+     * bus) is rated for fast mode. */
+    clock-frequency = <I2C_BITRATE_FAST>;
 
     trackpad: trackpad@74 {
         compatible = "azoteq,tps43";
